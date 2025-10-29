@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 
 	"github.com/gorilla/websocket"
@@ -13,14 +14,14 @@ type Client struct {
 	manager    *Manager
 
 	// egress is used to avoid concurrent writes on the websocket connection
-	egress chan []byte
+	egress chan Event
 }
 
 func NewClient(conn *websocket.Conn, manager *Manager) *Client {
 	return &Client{
 		connection: conn,
 		manager:    manager,
-		egress:     make(chan []byte),
+		egress:     make(chan Event),
 	}
 }
 
@@ -40,7 +41,16 @@ func (c *Client) readMessages() {
 			break
 		}
 
-		log.Println(string(payload))
+		var request Event
+
+		if err := json.Unmarshal(payload, &request); err != nil {
+			log.Printf("Error marshalling event: %v", err)
+			break
+		}
+
+		if err := c.manager.routeEvent(request, c); err != nil {
+			log.Println("error handling event: ", err)
+		}
 	}
 }
 
@@ -60,7 +70,13 @@ func (c *Client) writeMessages() {
 				return
 			}
 
-			if err := c.connection.WriteMessage(websocket.TextMessage, message); err != nil {
+			data, err := json.Marshal(message)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+
+			if err := c.connection.WriteMessage(websocket.TextMessage, data); err != nil {
 				log.Printf("error writing message: %v", err)
 			}
 
