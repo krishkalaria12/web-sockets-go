@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -43,11 +42,7 @@ func NewManager(ctx context.Context) *Manager {
 
 func (m *Manager) setupEventHandlers() {
 	m.handlers[EventSendMessage] = SendMessage
-}
-
-func SendMessage(event Event, c *Client) error {
-	fmt.Println(event)
-	return nil
+	m.handlers[EventChangeRoom] = ChatroomHandler
 }
 
 func (m *Manager) routeEvent(event Event, c *Client) error {
