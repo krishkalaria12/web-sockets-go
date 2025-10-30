@@ -42,6 +42,9 @@ func (c *Client) readMessages() {
 		return
 	}
 
+	// max amount of data which can be sent, if more will close the connection
+	c.connection.SetReadLimit(512)
+
 	c.connection.SetPongHandler(c.pongHandler)
 
 	for {
