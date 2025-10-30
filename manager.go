@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -24,12 +27,14 @@ type Manager struct {
 	sync.RWMutex // to prevent users from same read writes
 
 	handlers map[string]EventHandler
+	otps     retentionMap
 }
 
-func NewManager() *Manager {
+func NewManager(ctx context.Context) *Manager {
 	m := &Manager{
 		clients:  make(ClientList),
 		handlers: make(map[string]EventHandler),
+		otps:     NewRetentionMap(ctx, 5*time.Second),
 	}
 
 	m.setupEventHandlers()
@@ -56,7 +61,61 @@ func (m *Manager) routeEvent(event Event, c *Client) error {
 	}
 }
 
+func (m *Manager) LoginHandler(w http.ResponseWriter, r *http.Request) {
+	type userLoginRequest struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+
+	var request userLoginRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// in real production, we need to use proper auth method
+	if request.Username == "krish" && request.Password == "123" {
+		type response struct {
+			OTP string `json:"otp"`
+		}
+
+		otp := m.otps.NewOtp()
+
+		resp := response{
+			OTP: otp.Key,
+		}
+
+		data, err := json.Marshal(resp)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write(data)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusUnauthorized)
+}
+
 func (m *Manager) serveWs(w http.ResponseWriter, r *http.Request) {
+	// auth check
+	otp := r.URL.Query().Get("otp")
+	if otp == "" {
+		// Tell the user its not authorized
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	if !m.otps.VerifyOTP(otp) {
+		// Tell the user its not authorized
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	log.Println("New connection")
 
 	// upgrade regular http conn to websocket conn
